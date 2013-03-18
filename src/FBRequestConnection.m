@@ -70,9 +70,11 @@ typedef void (^KeyValueActionHandler)(NSString *key, id value);
 
 @property (nonatomic, retain) FBRequest *request;
 @property (nonatomic, copy) FBRequestHandler completionHandler;
+@property (nonatomic, copy) FBRequestUploadProgressHandler uploadProgressHandler;
 @property (nonatomic, copy) NSString *batchEntryName;
 
 - (id) initWithRequest:(FBRequest *)request
+ uploadProgressHandler:(FBRequestUploadProgressHandler)uploadProgressHandler
      completionHandler:(FBRequestHandler)handler
         batchEntryName:(NSString *)name;
 
@@ -81,15 +83,18 @@ typedef void (^KeyValueActionHandler)(NSString *key, id value);
 @implementation FBRequestMetadata
 
 @synthesize batchEntryName = _batchEntryName;
+@synthesize uploadProgressHandler = _uploadProgressHandler;
 @synthesize completionHandler = _completionHandler;
 @synthesize request = _request;
 
 - (id) initWithRequest:(FBRequest *)request
+ uploadProgressHandler:(FBRequestUploadProgressHandler)uploadProgressHandler
      completionHandler:(FBRequestHandler)handler
         batchEntryName:(NSString *)name {
     
     if (self = [super init]) {
         self.request = request;
+		self.uploadProgressHandler = uploadProgressHandler;
         self.completionHandler = handler;
         self.batchEntryName = name;
     }
@@ -303,7 +308,21 @@ typedef enum FBRequestConnectionState {
     [self addRequest:request completionHandler:handler batchEntryName:nil];
 }
 
+- (void)addRequest:(FBRequest*)request
+   progressHandler:(FBRequestUploadProgressHandler)progressHandler
+ completionHandler:(FBRequestHandler)handler;
+{
+	[self addRequest:request progressHandler:progressHandler completionHandler:handler batchEntryName:nil];
+}
+
 - (void)addRequest:(FBRequest *)request
+ completionHandler:(FBRequestHandler)handler
+    batchEntryName:(NSString *)name {
+	[self addRequest:request progressHandler:nil completionHandler:handler batchEntryName:name];
+}
+
+- (void)addRequest:(FBRequest *)request
+   progressHandler:(FBRequestUploadProgressHandler)uploadProgressHandler
  completionHandler:(FBRequestHandler)handler
     batchEntryName:(NSString *)name
 {
@@ -311,6 +330,7 @@ typedef enum FBRequestConnectionState {
              @"Requests must be added before starting or cancelling.");
 
     FBRequestMetadata *metadata = [[FBRequestMetadata alloc] initWithRequest:request
+													   uploadProgressHandler:uploadProgressHandler
                                                            completionHandler:handler
                                                               batchEntryName:name];
     [self.requests addObject:metadata];
@@ -412,6 +432,19 @@ typedef enum FBRequestConnectionState {
     return [request startWithCompletionHandler:handler];
 }
 
++ (FBRequestConnection*)startWithGraphPath:(NSString*)graphPath
+                                parameters:(NSDictionary*)parameters
+                                HTTPMethod:(NSString*)HTTPMethod
+                           progressHandler:(FBRequestUploadProgressHandler)progressHandler
+                         completionHandler:(FBRequestHandler)handler
+{
+    FBRequest *request = [FBRequest requestWithGraphPath:graphPath
+                                              parameters:parameters
+                                              HTTPMethod:HTTPMethod];
+    
+    return [request startWithProgressHandler:progressHandler andCompletionHandler:handler];
+}
+
 // ----------------------------------------------------------------------------
 // Private methods
 
@@ -510,8 +543,27 @@ typedef enum FBRequestConnectionState {
             [deprecatedDelegate requestLoading:self.deprecatedRequest];
         }
         
+        FBURLUploadProgressHandler progressHandler = nil;
+		// enumerate our requests looking for upload progress handlers
+		BOOL foundProgressHandler = NO;
+		for ( FBRequestMetadata *request in self.requests ) {
+			if (request.uploadProgressHandler) {
+				foundProgressHandler = YES;
+				break;
+			}
+		}
+		if (foundProgressHandler) {
+			progressHandler = ^(FBURLConnection *connection,
+								NSUInteger bytesWritten,
+								NSUInteger bytesExpectedToBeWritten) {
+                
+				[self continueWithConnection:connection bytesWritten:bytesWritten bytesExpectedToBeWritten:bytesExpectedToBeWritten];
+			};
+		};
+        
         FBURLConnection *connection = [[FBURLConnection alloc] initWithRequest:request
                                                          skipRoundTripIfCached:NO
+														 uploadProgressHandler:progressHandler
                                                              completionHandler:handler];
         self.connection = connection;
         [connection release];
@@ -905,6 +957,18 @@ typedef enum FBRequestConnectionState {
 }
 
 #pragma mark -
+
+- (void)continueWithConnection:(FBURLConnection *)connection
+				  bytesWritten:(NSUInteger)bytesWritten
+	  bytesExpectedToBeWritten:(NSUInteger)expectedBytes
+{
+	//TODO: distinguish between each connection part
+	for (FBRequestMetadata *metadata in self.requests) {
+		if (metadata.uploadProgressHandler) {
+			metadata.uploadProgressHandler(self, bytesWritten, expectedBytes);
+		}
+	}
+}
 
 - (void)completeWithResponse:(NSURLResponse *)response
                         data:(NSData *)data

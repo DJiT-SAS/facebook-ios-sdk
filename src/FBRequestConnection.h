@@ -57,6 +57,10 @@ typedef void (^FBRequestHandler)(FBRequestConnection *connection,
                                  id result,
                                  NSError *error);
 
+typedef void (^FBRequestUploadProgressHandler)(FBRequestConnection *connection,
+                                               NSUInteger bytesWritten,
+                                               NSUInteger bytesExpectedToBeWritten);
+
 /*!
  @class FBRequestConnection
 
@@ -155,6 +159,10 @@ typedef void (^FBRequestHandler)(FBRequestConnection *connection,
 - (void)addRequest:(FBRequest*)request
  completionHandler:(FBRequestHandler)handler;
 
+- (void)addRequest:(FBRequest*)request
+   progressHandler:(FBRequestUploadProgressHandler)progressHandler
+ completionHandler:(FBRequestHandler)handler;
+
 /*!
  @method
 
@@ -177,6 +185,11 @@ typedef void (^FBRequestHandler)(FBRequestConnection *connection,
  [Graph API Batch Requests]( https://developers.facebook.com/docs/reference/api/batch/ ). 
 */
 - (void)addRequest:(FBRequest*)request
+ completionHandler:(FBRequestHandler)handler
+    batchEntryName:(NSString*)name;
+
+- (void)addRequest:(FBRequest*)request
+   progressHandler:(FBRequestUploadProgressHandler)progressHandler
  completionHandler:(FBRequestHandler)handler
     batchEntryName:(NSString*)name;
 
@@ -384,6 +397,12 @@ typedef void (^FBRequestHandler)(FBRequestConnection *connection,
 + (FBRequestConnection*)startWithGraphPath:(NSString*)graphPath
                                 parameters:(NSDictionary*)parameters
                                 HTTPMethod:(NSString*)HTTPMethod
+                         completionHandler:(FBRequestHandler)handler;
+
++ (FBRequestConnection*)startWithGraphPath:(NSString*)graphPath
+                                parameters:(NSDictionary*)parameters
+                                HTTPMethod:(NSString*)HTTPMethod
+                           progressHandler:(FBRequestUploadProgressHandler)progressHandler
                          completionHandler:(FBRequestHandler)handler;
 
 @end
